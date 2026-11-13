@@ -2,6 +2,9 @@
  const main=document.querySelector('#main');
  let state;
  let introTimer=null;
+ let refreshIntroAssets=null;
+ UI.portraits.subscribe(()=>{if(refreshIntroAssets)refreshIntroAssets()});
+ UI.portraits.preload();
  function reset(){clearInterval(introTimer);UI.lastActive=undefined;state={intro:true,tab:'story',line:0,read:new Set(),collected:new Set(),evidenceTab:'docs',answers:CASE.questions.map(()=>({answer:'',proof:[]})),verdict:'',ending:null,step:0,done:false,review:false};render()}
  function tabs(){document.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.tab===state.tab);b.setAttribute('aria-pressed',b.dataset.tab===state.tab);b.disabled=!!state.ending||state.intro});updateWorkflow()}
  function updateWorkflow(){const hints={story:'진술을 듣고, 확인할 쟁점을 찾으세요.',evidence:'서류에서 정보를 기록한 뒤 요건에 연결하세요.',verify:'기록한 정보를 각 요건의 근거로 채택하세요.'};document.querySelector('#workflow').innerHTML=state.intro?'':`<span>${state.ending?'판정 이후의 이야기를 확인하세요.':hints[state.tab]}</span><b>${state.ending?'종결 기록':state.tab==='story'?`진술 ${state.line+1} / ${CASE.story.length}`:`조사 노트 ${state.collected.size}개`}</b>`}
@@ -9,17 +12,26 @@
  function render(){document.querySelector('.app').classList.toggle('intro-mode',state.intro);tabs();if(state.intro){renderIntro();return}if(state.ending){renderEnding();return}if(state.tab==='story')renderStory();if(state.tab==='evidence')renderEvidence();if(state.tab==='verify')renderVerify()}
  function renderIntro(){
   const overview=CASE.intro;
-  main.innerHTML=`<section class="intro-screen" aria-labelledby="intro-title"><small>FIND!! / 사건 접수</small><h1 id="intro-title">${CASE.title}</h1><p class="intro-copy" id="intro-copy" aria-hidden="true"></p><p class="sr-only">${overview}</p><div class="intro-actions"><button id="intro-reveal">전체 내용 보기</button><button class="primary" id="intro-start" disabled>조사 시작 →</button></div></section>`;
+  main.innerHTML=`<section class="intro-screen" aria-labelledby="intro-title"><small>FIND!! / 사건 접수</small><h1 id="intro-title">${CASE.title}</h1><p class="intro-copy" id="intro-copy" aria-hidden="true"></p><p class="sr-only">${overview}</p><p id="portrait-load-status" class="portrait-load-status" role="status"></p><button id="portrait-retry" hidden>표정 이미지 다시 준비하기</button><div class="intro-actions"><button id="intro-reveal">전체 내용 보기</button><button class="primary" id="intro-start" disabled>조사 시작 →</button></div></section>`;
   const copy=document.querySelector('#intro-copy'),start=document.querySelector('#intro-start'),reveal=document.querySelector('#intro-reveal');
   start.disabled=true;
+  let textComplete=false;
+  refreshIntroAssets=()=>{
+   const progress=UI.portraits.status();
+   document.querySelector('#portrait-load-status').textContent=progress.settled?(progress.failed?`표정 ${progress.ready} / ${progress.total} 준비 · 실패한 표정은 기존 이미지를 유지합니다.`:`표정 ${progress.total}종 준비 완료`):`표정 준비 중 · ${progress.ready} / ${progress.total}`;
+   document.querySelector('#portrait-retry').hidden=!progress.settled||!progress.failed;
+   start.disabled=!textComplete||!progress.settled||progress.ready===0;
+  };
+  document.querySelector('#portrait-retry').onclick=()=>{UI.portraits.retry();refreshIntroAssets()};
+  refreshIntroAssets();
   const letters=Array.from(overview);let count=0;
-  function complete(){clearInterval(introTimer);introTimer=null;copy.textContent=overview;start.disabled=false;reveal.disabled=true;}
+  function complete(){clearInterval(introTimer);introTimer=null;copy.textContent=overview;textComplete=true;reveal.disabled=true;refreshIntroAssets()}
   reveal.onclick=complete;
-  start.onclick=()=>{if(start.disabled)return;clearInterval(introTimer);state.intro=false;render();window.scrollTo(0,0)};
+  start.onclick=()=>{if(start.disabled)return;clearInterval(introTimer);refreshIntroAssets=null;state.intro=false;render();window.scrollTo(0,0)};
   if(document.documentElement.dataset.reduceEffects==='true'||window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){complete();return}
   introTimer=setInterval(()=>{count+=1;copy.textContent=letters.slice(0,count).join('');if(count>=letters.length)complete()},35);
  }
- function renderStory(){main.innerHTML=UI.scene(CASE.story[state.line],`人物 진술 · ${state.line+1} / ${CASE.story.length}`.replace('人物','인물'),`<button id="prev" ${state.line===0?'disabled':''}>← 이전 대화</button><button class="primary" id="next">${state.line===CASE.story.length-1?'증거 조사하기 →':'다음 대화 →'}</button>`);document.querySelector('#prev').onclick=()=>{state.line--;render()};document.querySelector('#next').onclick=()=>{if(state.line<CASE.story.length-1){state.line++;render()}else go('evidence')}}
+ function renderStory(){UI.renderScene(main,CASE.story[state.line],`人物 진술 · ${state.line+1} / ${CASE.story.length}`.replace('人物','인물'),`<button id="prev" ${state.line===0?'disabled':''}>← 이전 대화</button><button class="primary" id="next">${state.line===CASE.story.length-1?'증거 조사하기 →':'다음 대화 →'}</button>`);document.querySelector('#prev').onclick=()=>{state.line--;render()};document.querySelector('#next').onclick=()=>{if(state.line<CASE.story.length-1){state.line++;render()}else go('evidence')}}
 
  function fact(id){for(const d of CASE.docs){const f=(d.facts||[]).find(f=>f.id===id);if(f)return {doc:d,...f}}}
  function note(){const entries=[...state.collected].map(fact);return '<section class="investigation-note"><h2>나의 조사 노트 · '+entries.length+'개 기록</h2>'+(entries.length?entries.map(f=>'<article>'+UI.highlight(f.text)+'<small>'+f.doc.title+'</small></article>').join(''):'<p>서류를 열고 주요 정보를 눌러 기록하세요.</p>')+'</section>'}
@@ -62,6 +74,6 @@
  ['에필로그 · 다시 펼친 서류','박지민은 정정 통지를 받고 조용히 고개를 끄덕였습니다. 기록은 바로잡혔지만 설명해야 했던 시간은 남았습니다. 다음 판정에서는 가격과 사양, 실제 납품을 함께 읽어야 합니다.',7]
  ]}
  function report(){return `<div class="report"><h2>조사 결과</h2><p>제출 판정: <b>${state.verdict}</b></p><p>${state.ending.right?'판정이 자료와 일치합니다.':'재검토 후 판정 정정: 위반 확인 안 됨'}</p>${CASE.questions.map((q,i)=>`<article><h3>${q.q}</h3><p>내 판단: ${state.answers[i].answer==='yes'?'예':'아니요'} · 자료상 판단: ${q.answer==='yes'?'예':'아니요'}</p><p>지정 근거: ${state.answers[i].proof.map(p=>fact(p).doc.title+' — '+fact(p).text).join(', ')}</p><p>핵심 근거: ${q.proof.map(p=>fact(p).doc.title+' — '+fact(p).text).join(', ')}</p></article>`).join('')}<p>385,000원 &lt; 420,000원. 하지만 시장상품은 RAM 8GB·보증 1년으로 계약의 16GB·3년보다 낮습니다. 납품품 A-100P는 계약과 일치합니다.</p></div>`}
- function renderEnding(){if(state.done){main.innerHTML=`<section class="paper result"><small>INVESTIGATION COMPLETE</small><div class="seal">✓</div><h1>박지민 사건 조사 완료</h1><p>${state.ending.right?'차이를 확인하고, 기록을 남겼습니다.':'판정을 정정하고, 조사 기록을 마무리했습니다.'}</p><p class="outcome">${state.ending.right&&state.ending.supported?'증거에 기반한 판정':state.ending.right?'판정 타당 · 검증 근거 보완':'재검토를 통한 기록 정정'}</p>${state.review?report():''}<div class="result-actions"><button class="primary" id="replay">사건 다시 플레이하기</button><button id="review">조사 결과 ${state.review?'접기':'다시 보기'}</button></div></section>`;document.querySelector('#replay').onclick=reset;document.querySelector('#review').onclick=()=>{state.review=!state.review;render()};return}const lines=endingLines();main.innerHTML=UI.scene(lines[state.step],`${['최종 판정','당사자 반응','후속조치','에필로그'][state.step]} · ${state.step+1} / 4`,`<button id="end-prev" ${state.step===0?'disabled':''}>← 이전</button><button class="primary" id="end-next">${state.step===3?'조사 완료 →':'다음 이야기 →'}</button>`);document.querySelector('#end-prev').onclick=()=>{state.step--;render()};document.querySelector('#end-next').onclick=()=>{if(state.step<3)state.step++;else state.done=true;render();window.scrollTo(0,0)}}
+ function renderEnding(){if(state.done){main.innerHTML=`<section class="paper result"><small>INVESTIGATION COMPLETE</small><div class="seal">✓</div><h1>박지민 사건 조사 완료</h1><p>${state.ending.right?'차이를 확인하고, 기록을 남겼습니다.':'판정을 정정하고, 조사 기록을 마무리했습니다.'}</p><p class="outcome">${state.ending.right&&state.ending.supported?'증거에 기반한 판정':state.ending.right?'판정 타당 · 검증 근거 보완':'재검토를 통한 기록 정정'}</p>${state.review?report():''}<div class="result-actions"><button class="primary" id="replay">사건 다시 플레이하기</button><button id="review">조사 결과 ${state.review?'접기':'다시 보기'}</button></div></section>`;document.querySelector('#replay').onclick=reset;document.querySelector('#review').onclick=()=>{state.review=!state.review;render()};return}const lines=endingLines();UI.renderScene(main,lines[state.step],`${['최종 판정','당사자 반응','후속조치','에필로그'][state.step]} · ${state.step+1} / 4`,`<button id="end-prev" ${state.step===0?'disabled':''}>← 이전</button><button class="primary" id="end-next">${state.step===3?'조사 완료 →':'다음 이야기 →'}</button>`);document.querySelector('#end-prev').onclick=()=>{state.step--;render()};document.querySelector('#end-next').onclick=()=>{if(state.step<3)state.step++;else state.done=true;render();window.scrollTo(0,0)}}
  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>go(b.dataset.tab));document.querySelector('#close-doc').onclick=()=>document.querySelector('#document').close();let start=null;main.addEventListener('touchstart',e=>{if(e.target.closest('input,label,button'))return;start={x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY}},{passive:true});main.addEventListener('touchend',e=>{if(!start||state.ending||state.intro)return;const dx=e.changedTouches[0].clientX-start.x,dy=e.changedTouches[0].clientY-start.y;start=null;if(Math.abs(dx)>90&&Math.abs(dx)>Math.abs(dy)*1.5){const t=['story','evidence','verify'];go(t[Math.max(0,Math.min(2,t.indexOf(state.tab)+(dx<0?1:-1)))])}},{passive:true});reset();
 })();

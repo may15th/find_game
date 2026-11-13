@@ -242,3 +242,11 @@ footer{font-size:10px;color:#a7b9c2;padding:26px 0}
 }
 [data-reduce-effects="true"] *,[data-reduce-effects="true"] *::before,[data-reduce-effects="true"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Decoded portraits stay mounted. Only opacity changes on a dialogue turn. */
+.scene .character.portrait{width:auto;aspect-ratio:347/444;pointer-events:none}
+.expression-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center bottom;opacity:0;transition:opacity 180ms linear;animation:none!important;transition-delay:0s;will-change:opacity}
+.portrait-load-status{min-height:1.7em;color:var(--muted);font-size:12px;margin:14px 0 0}
+#portrait-retry{align-self:flex-start;margin-top:12px;font-size:13px}
+[data-reduce-effects="true"] .expression-frame{transition:none}
+@media(prefers-reduced-motion:reduce){.expression-frame{transition:none}}
